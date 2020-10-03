@@ -1,0 +1,281 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+#	Predmet: 		Operacni systemy
+#	Projekt:		1. Uloha
+#
+#	Autor:			Hurta David
+#
+#	Naposledy upraveno:	28. 3. 2020
+	
+
+# Scitace pro pocet souboru dle kategorie
+NF_lt_100B=0
+NF_ge_100B_lt_1KiB=0
+NF_ge_1KiB_lt_10KiB=0
+NF_ge_10KiB_lt_100KiB=0
+NF_ge_100KiB_lt_1MiB=0
+NF_ge_1MiB_lt_10MiB=0
+NF_ge_10MiB_lt_100MiB=0
+NF_ge_100MiB_lt_1GiB=0
+NF_ge_1GiB=0
+
+# Argumenty programu
+file_ere=""
+root_directory=""
+
+# Pocty souboru
+number_of_files=0
+number_of_directories=0
+
+# Pomocne promenne
+is_n_set=0
+normalization_coefficient=1
+max_number_of_files_to_print=0;
+
+# Rekurzivni hledani a zpracovavani souboru a slozek
+# Rekurzivne prohledava adresare. Nutna kontrola pro zjisteni, zda ma program opravneni cist/vstoupit.
+# Pri nalezeni souboru, ktery nematchuje file_ere, je soubor zpracovan (tj. zjisteni velikosti).
+find_files_and_dirs() {
+directory=$1
+
+# Konstanty ulozene v promenne
+B_100=$((1 * 100))
+KiB_1=$((1 * 1024))
+KiB_10=$((10 * 1024))
+KiB_100=$((100 * 1024))
+MiB_1=$((1 * 1024 * 1024))
+MiB_10=$((10 * 1024 * 1024))
+MiB_100=$((100 * 1024 * 1024))
+GiB_1=$((1 * 1024 * 1024 * 1024))
+
+IFS='
+'; 	for file in $(find "$directory" -mindepth 1 -maxdepth 1); do
+	if [ $? -eq 1 ]
+	then
+		echo 'Error: Nastala chyba pri prochazeni souboru' >&2
+		exit 1
+	fi
+
+	if [ -d "$file" ]
+	then
+		if [ ! -x "$file" ]
+		then
+			echo 'Error: Nastala chyba pri prochazeni souboru' >&2
+			exit 1
+		fi
+
+		if [ $(echo "$file" | grep -E -o "[^\/]+$" | grep -E -o "$file_ere" | wc -l) -eq 0 ] 
+		then
+			number_of_directories=$(( number_of_directories + 1 ))
+			find_files_and_dirs "$file"
+		fi
+	else
+		if [ -f "$file" ]
+		then 
+			if [ ! -r "$file" ]
+			then
+				echo 'Error: Nastala chyba pri prochazeni souboru' >&2
+				exit 1
+			fi
+
+			if [ $(echo "$file" | grep -E -o "[^\/]+$" | grep -E -o "$file_ere" | wc -l) -eq 0 ] 
+			then
+				number_of_files=$(( number_of_files + 1 ))
+	
+				size_of_file=$(wc -c < "$file")
+				if [ "$size_of_file" -lt "$B_100" ]; then
+					NF_lt_100B=$(( NF_lt_100B + 1 ))
+				elif [ "$size_of_file" -ge "$B_100" -a "$size_of_file" -lt "$KiB_1" ]; then
+					NF_ge_100B_lt_1KiB=$(( NF_ge_100B_lt_1KiB + 1 ))
+				elif [ "$size_of_file" -ge "$KiB_1" -a "$size_of_file" -lt "$KiB_10" ]; then
+					NF_ge_1KiB_lt_10KiB=$(( NF_ge_1KiB_lt_10KiB + 1 ))
+				elif [ "$size_of_file" -ge "$KiB_10" -a "$size_of_file" -lt "$KiB_100" ]; then
+					NF_ge_10KiB_lt_100KiB=$(( NF_ge_10KiB_lt_100KiB + 1 ))
+				elif [ "$size_of_file" -ge "$KiB_100" -a "$size_of_file" -lt "$MiB_1" ]; then
+					NF_ge_100KiB_lt_1MiB=$(( NF_ge_100KiB_lt_1MiB + 1 ))
+				elif [ "$size_of_file" -ge "$MiB_1" -a "$size_of_file" -lt "$MiB_10" ]; then
+					NF_ge_1MiB_lt_10MiB=$(( NF_ge_1MiB_lt_10MiB + 1 ))
+				elif [ "$size_of_file" -ge "$MiB_10" -a "$size_of_file" -lt "$MiB_100" ]; then
+					NF_ge_10MiB_lt_100MiB=$(( NF_ge_10MiB_lt_100MiB + 1 ))
+				elif [ "$size_of_file" -ge "$MiB_100" -a "$size_of_file" -lt "$GiB_1" ]; then
+					NF_ge_100MiB_lt_1GiB=$(( NF_ge_100MiB_lt_1GiB + 1 ))
+				elif [ "$size_of_file" -ge "$GiB_1" ]; then
+					NF_ge_1GiB=$(( NF_ge_1GiB + 1 ))
+				fi
+			fi
+		fi	
+	fi
+	done
+}
+
+# Vytiskne kategorii, tj. radek popisujici kategorii a pocet souboru
+printf_categorie() {
+	categorie_name=$1
+	number_of_files_found=$2
+	print_categorie_name "$categorie_name"
+
+	k=0
+	limit=$(printf "%.0f" $(echo "$normalization_coefficient * $number_of_files_found" | bc -l))
+	while [ "$k" -lt "$limit" ]
+	do
+		printf '#'
+		k=$(( k + 1 ))
+	done
+
+	printf '\n'
+}
+
+# Vytiskne nazev kategorie, predany parametrem, dle formatu '%-10s: '
+print_categorie_name() {
+	categorie_name=$1
+	printf '%-10s: ' "${categorie_name}"
+	if [ $? -eq 1 ]
+	then
+		echo 'nError: Nastala chyba pri cteni souboru' >&2
+		exit 1
+	fi
+}
+
+#Nastavi normalization_coefficient nutny ke spravne realizaci normalizace
+#normalization_coefficient * max_number_of_files_found_in_one_categorie = max_number_of_files_to_print
+set_normalization_coefficient() {
+	max_number_of_files_found="$NF_lt_100B"
+	if [ "$max_number_of_files_found" -lt "$NF_ge_100B_lt_1KiB" ]; then
+		max_number_of_files_found="$NF_ge_100B_lt_1KiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_1KiB_lt_10KiB" ]; then
+		max_number_of_files_found="$NF_ge_1KiB_lt_10KiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_10KiB_lt_100KiB" ]; then
+		max_number_of_files_found="$NF_ge_10KiB_lt_100KiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_100KiB_lt_1MiB" ]; then
+		max_number_of_files_found="$NF_ge_100KiB_lt_1MiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_1MiB_lt_10MiB" ]; then
+		max_number_of_files_found="$NF_ge_1MiB_lt_10MiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_10MiB_lt_100MiB" ]; then
+		max_number_of_files_found="$NF_ge_10MiB_lt_100MiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_100MiB_lt_1GiB" ]; then
+		max_number_of_files_found="$NF_ge_100MiB_lt_1GiB"
+	fi
+	if [ "$max_number_of_files_found" -lt "$NF_ge_1GiB" ]; then
+		max_number_of_files_found="$NF_ge_1GiB"
+	fi
+
+	if [ "$max_number_of_files_found" -gt "$max_number_of_files_to_print" ]
+	then
+		normalization_coefficient=$(echo "$max_number_of_files_to_print" / "$max_number_of_files_found" | bc -l)
+	fi
+}
+
+#********************************************* ZACATEK PROGRAMU *********************************************
+
+# Zpracovani argumentu
+while getopts ":i:n" opt; do
+	case ${opt} in
+		i)
+		file_ere="$OPTARG"
+		;;
+
+		n)
+		is_n_set=1
+		;;
+
+		\?)
+		echo "Invalid option: ${OPTARG}" >&2
+		exit 1
+		;;
+
+		:)
+		echo "Option: ${OPTARG} requires argument" >&2
+		exit 1
+		;;
+	esac
+done
+shift $((OPTIND -1))
+
+# V pripade vetsiho poctu argumentu nebo pri spatnem poradi argumentu (napr. (./dirgraph [DIR] -n))
+# Ukonci program
+if [ $# -gt 1 ]
+then
+	echo "The number or the order of arguments is invalid" >&2
+	exit 1
+fi
+
+# Kontrola vyskytu korenoveho adresare a jeho validace
+if [ $# -eq 1 ]
+then
+	root_directory=$1
+	if [ ! -d "$root_directory" ]
+	then
+		echo "root_directory: ${root_directory} is not a valid directory" >&2
+		exit 1
+	fi
+
+	if [ $(echo "$root_directory" | grep -E -o "([^\/]+$)|([\/][^\/]*[\/]$)" | grep -E -o "[^\/]*[^\/]" | grep -E -o "$file_ere" | wc -l) -ne 0 ]
+	then
+		echo "FILE_ERE matches root directory" >&2
+		exit 1
+	fi
+
+else
+	if [ -z "$root_directory" ]
+	then
+		if [ $(pwd | grep -E -o "([^\/]+$)|([\/][^\/]*[\/]$)" | grep -E -o "[^\/]*[^\/]" | grep -E -o "$file_ere" | wc -l) -ne 0 ]
+		then
+			echo "FILE_ERE matches root directory" >&2
+			exit 1
+		fi
+	fi
+fi
+
+# Vypocitani sirky mozneho tisku hashtagu (#)
+if [ $is_n_set -eq 1 ]
+then
+	if [ -t 1 ]
+	then
+		max_number_of_files_to_print=$(( $(tput cols) - 12 - 1 ))	# 12 znaku predstavuje sirku popsani kategorie
+	else
+		max_number_of_files_to_print=$(( 79 - 12 ))
+	fi
+fi
+
+# Zajisteni vytisknuti jmena adresare, ktery byl zadan
+if [ -z "$root_directory" ]
+then
+	root_directory="."
+else
+	root_directory_print="$root_directory"
+fi
+
+# Nutne pricist 1 k poctu adresarum, ND > 0
+number_of_directories=$(( number_of_directories + 1))
+
+# Zpracovani souboru a jejich vytisk
+find_files_and_dirs "$root_directory"
+
+if [ $is_n_set -eq 1 ]
+then
+	set_normalization_coefficient
+fi
+
+echo "Root directory: ${root_directory_print}"
+echo "Directories: ${number_of_directories}"
+echo "All files: ${number_of_files}"
+echo "File size histogram:"
+
+printf_categorie	"  <100 B"	"$NF_lt_100B"
+printf_categorie	"  <1 KiB"	"$NF_ge_100B_lt_1KiB"
+printf_categorie	"  <10 KiB"	"$NF_ge_1KiB_lt_10KiB"
+printf_categorie	"  <100 KiB"	"$NF_ge_10KiB_lt_100KiB"
+printf_categorie	"  <1 MiB"	"$NF_ge_100KiB_lt_1MiB"
+printf_categorie	"  <10 MiB"	"$NF_ge_1MiB_lt_10MiB"
+printf_categorie	"  <100 MiB"	"$NF_ge_10MiB_lt_100MiB"
+printf_categorie	"  <1 GiB"	"$NF_ge_100MiB_lt_1GiB"
+printf_categorie	"  >=1 GiB"	"$NF_ge_1GiB"
+
+exit 0
